@@ -308,9 +308,66 @@ size_t CudaKeySearchDevice::getResults(std::vector<KeySearchResult> &resultsOut)
     return resultsOut.size();
 }
 
+void CudaKeySearchDevice::initExport(const secp256k1::uint256 &start, const secp256k1::uint256 &end, uint64_t randomCount, bool randomRange)
+{
+    _startExponent = start;
+
+    cudaCall(cudaSetDevice(_device));
+    cudaCall(cudaSetDeviceFlags(cudaDeviceScheduleBlockingSync));
+    cudaCall(cudaDeviceSetCacheConfig(cudaFuncCachePreferL1));
+
+    // This will initialize the base points
+    generateStartingPoints();
+
+    cudaCall(_resultList.init(sizeof(CudaExportResult), _blocks * _threads));
+}
+
+void CudaKeySearchDevice::doExportStep()
+{
+    unsigned int startKey[8];
+    _startExponent.exportWords(startKey, 8, secp256k1::uint256::BigEndian);
+
+    unsigned int *devStartKey;
+    cudaCall(cudaMalloc(&devStartKey, sizeof(unsigned int) * 8));
+    cudaCall(cudaMemcpy(devStartKey, startKey, sizeof(unsigned int) * 8, cudaMemcpyHostToDevice));
+
+    callExportKernel(_blocks, _threads, devStartKey, _deviceKeys.getDevBasePointX(), _deviceKeys.getDevBasePointY());
+
+    cudaCall(cudaFree(devStartKey));
+
+    _startExponent = _startExponent.add((uint64_t)_blocks * _threads);
+}
+
+size_t CudaKeySearchDevice::getExportResults(std::vector<CudaExportResult> &results)
+{
+    int count = _resultList.size();
+    if(count == 0) {
+        return 0;
+    }
+
+    results.resize(count);
+    _resultList.read(results.data(), count);
+    _resultList.clear();
+
+    return count;
+}
+
 secp256k1::uint256 CudaKeySearchDevice::getNextKey()
 {
     uint64_t totalPoints = (uint64_t)_pointsPerThread * _threads * _blocks;
 
     return _startExponent + secp256k1::uint256(totalPoints) * _iterations * _stride;
+}
+
+void CudaKeySearchDevice::initExport(const secp256k1::uint256 &start, const secp256k1::uint256 &end, uint64_t randomCount, bool randomRange)
+{
+}
+
+void CudaKeySearchDevice::doExportStep()
+{
+}
+
+size_t CudaKeySearchDevice::getExportResults(std::vector<CudaExportResult> &results)
+{
+    return 0;
 }

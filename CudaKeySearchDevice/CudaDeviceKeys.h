@@ -76,6 +76,9 @@ public:
 
 	void clearPublicKeys();
 
+	unsigned int *getDevPrivate();
+	unsigned int *getDevBasePointX();
+	unsigned int *getDevBasePointY();
 };
 
 #endif

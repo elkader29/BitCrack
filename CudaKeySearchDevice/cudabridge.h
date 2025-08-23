@@ -10,6 +10,8 @@
 
 void callKeyFinderKernel(int blocks, int threads, int points, bool useDouble, int compression);
 
+void callExportKernel(int blocks, int threads, unsigned int *startKey, const unsigned int *basePointsX, const unsigned int *basePointsY);
+
 void waitForKernel();
 
 cudaError_t setIncrementorPoint(const secp256k1::uint256 &x, const secp256k1::uint256 &y);

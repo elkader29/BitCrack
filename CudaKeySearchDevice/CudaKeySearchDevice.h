@@ -21,6 +21,11 @@ struct CudaDeviceResult {
     unsigned int digest[5];
 };
 
+struct CudaExportResult {
+    unsigned int privateKey[8];
+    unsigned int x[8];
+};
+
 class CudaKeySearchDevice : public KeySearchDevice {
 
 private:
@@ -86,6 +91,12 @@ public:
     virtual void getMemoryInfo(uint64_t &freeMem, uint64_t &totalMem);
 
     virtual secp256k1::uint256 getNextKey();
+
+    void initExport(const secp256k1::uint256 &start, const secp256k1::uint256 &end, uint64_t randomCount, bool randomRange);
+
+    void doExportStep();
+
+    size_t getExportResults(std::vector<CudaExportResult> &results);
 };
 
 #endif

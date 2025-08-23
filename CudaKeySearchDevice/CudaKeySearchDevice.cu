@@ -259,3 +259,87 @@ __global__ void keyFinderKernelWithDouble(int points, int compression)
 {
     doIterationWithDouble(points, compression);
 }
+
+__device__ void privateKeyToPublicKey(const unsigned int *privateKey, unsigned int *publicKeyX, unsigned int *publicKeyY, const unsigned int *basePointsX, const unsigned int *basePointsY)
+{
+    // Initialize with infinity
+    for(int i = 0; i < 8; i++) {
+        publicKeyX[i] = 0xFFFFFFFF;
+        publicKeyY[i] = 0xFFFFFFFF;
+    }
+
+    for (int i = 0; i < 256; i++) {
+        unsigned int bit = privateKey[7 - i / 32] & (1 << (i % 32));
+
+        if (bit != 0) {
+            unsigned int gx[8];
+            unsigned int gy[8];
+
+            for(int j = 0; j < 8; j++) {
+                gx[j] = basePointsX[i * 8 + j];
+                gy[j] = basePointsY[i * 8 + j];
+            }
+
+            if (isInfinity(publicKeyX)) {
+                copyBigInt(gx, publicKeyX);
+                copyBigInt(gy, publicKeyY);
+            } else {
+                unsigned int s[8];
+                unsigned int dx[8];
+                subModP(gx, publicKeyX, dx);
+                invModP(dx);
+                unsigned int dy[8];
+                subModP(gy, publicKeyY, dy);
+                mulModP(dx, dy, s);
+
+                unsigned int newX[8];
+                unsigned int s2[8];
+                squareModP(s, s2);
+                subModP(s2, publicKeyX, newX);
+                subModP(newX, gx, newX);
+
+                unsigned int newY[8];
+                subModP(publicKeyX, newX, dy);
+                mulModP(s, dy, newY);
+                subModP(newY, publicKeyY, newY);
+
+                copyBigInt(newX, publicKeyX);
+                copyBigInt(newY, publicKeyY);
+            }
+        }
+    }
+}
+
+__device__ void setResultExport(unsigned int *privateKey, unsigned int *x)
+{
+    CudaExportResult r;
+
+    for(int i = 0; i < 8; i++) {
+        r.privateKey[i] = privateKey[i];
+        r.x[i] = x[i];
+    }
+
+    atomicListAdd(&r, sizeof(r));
+}
+
+
+__global__ void exportKernel(unsigned int *startKey, const unsigned int *basePointsX, const unsigned int *basePointsY)
+{
+    int threadId = blockIdx.x * blockDim.x + threadIdx.x;
+
+    unsigned int privateKey[8];
+
+    add_cc(privateKey[7], startKey[7], threadId);
+    addc_cc(privateKey[6], startKey[6], 0);
+    addc_cc(privateKey[5], startKey[5], 0);
+    addc_cc(privateKey[4], startKey[4], 0);
+    addc_cc(privateKey[3], startKey[3], 0);
+    addc_cc(privateKey[2], startKey[2], 0);
+    addc_cc(privateKey[1], startKey[1], 0);
+    addc(privateKey[0], startKey[0], 0);
+
+    unsigned int x[8], y[8];
+    privateKeyToPublicKey(privateKey, x, y, basePointsX, basePointsY);
+
+    setResultExport(privateKey, x);
+}

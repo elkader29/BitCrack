@@ -14,6 +14,14 @@ void callKeyFinderKernel(int blocks, int threads, int points, bool useDouble, in
 	waitForKernel();
 }
 
+__global__ void exportKernel(unsigned int *startKey, const unsigned int *basePointsX, const unsigned int *basePointsY);
+
+void callExportKernel(int blocks, int threads, unsigned int *startKey, const unsigned int *basePointsX, const unsigned int *basePointsY)
+{
+    exportKernel<<<blocks, threads>>>(startKey, basePointsX, basePointsY);
+    waitForKernel();
+}
+
 
 void waitForKernel()
 {

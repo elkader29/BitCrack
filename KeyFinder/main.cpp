@@ -9,6 +9,7 @@
 #include "CmdParse.h"
 #include "Logger.h"
 #include "ConfigFile.h"
+#include "CryptoUtil.h"
 
 #include "DeviceManager.h"
 
@@ -55,6 +56,8 @@ typedef struct {
     secp256k1::uint256 stride = 1;
 
     bool follow = false;
+    bool exportX = false;
+    uint64_t randomCount = 0;
 }RunConfig;
 
 static RunConfig _config;
@@ -203,6 +206,8 @@ void usage()
     printf("-p, --points N          N points per thread\n");
     printf("-i, --in FILE           Read addresses from FILE, one per line\n");
     printf("-o, --out FILE          Write keys to FILE\n");
+    printf("-x                      Export private key and public key X-coordinate\n");
+    printf("--random N              Generate N random keys\n");
     printf("-f, --follow            Follow text output\n");
     printf("--list-devices          List available devices\n");
     printf("--keyspace KEYSPACE     Specify the keyspace:\n");
@@ -366,7 +371,7 @@ void readCheckpointFile()
     _config.totalkeys = (_config.nextKey - _config.startKey).toUint64();
 }
 
-int run()
+int run(bool keyspaceOpt)
 {
     if(_config.device < 0 || _config.device >= _devices.size()) {
         Logger::log(LogLevel::Error, "device " + util::format(_config.device) + " does not exist");
@@ -401,22 +406,45 @@ int run()
         // Get device context
         KeySearchDevice *d = getDeviceContext(_devices[_config.device], _config.blocks, _config.threads, _config.pointsPerThread);
 
-        KeyFinder f(_config.nextKey, _config.endKey, _config.compression, d, _config.stride);
+        if(_config.exportX) {
+            if(_devices[_config.device].type != DeviceManager::DeviceType::CUDA) {
+                Logger::log(LogLevel::Error, "Export mode is only supported for CUDA devices");
+                return 1;
+            }
+            CudaKeySearchDevice *cudaDevice = (CudaKeySearchDevice *)d;
+            cudaDevice->initExport(_config.nextKey, _config.endKey, _config.randomCount, keyspaceOpt);
 
-        f.setResultCallback(resultCallback);
-        f.setStatusInterval(_config.statusInterval);
-        f.setStatusCallback(statusCallback);
+            secp256k1::uint256 key = _config.nextKey;
+            while(key.cmp(_config.endKey) <= 0) {
+                cudaDevice->doExportStep();
+                std::vector<CudaExportResult> results;
+                size_t count = cudaDevice->getExportResults(results);
 
-        f.init();
-
-        if(!_config.targetsFile.empty()) {
-            f.setTargets(_config.targetsFile);
+                for(size_t i = 0; i < count; i++) {
+                    secp256k1::uint256 pk(results[i].privateKey, secp256k1::uint256::BigEndian);
+                    secp256k1::uint256 x(results[i].x, secp256k1::uint256::BigEndian);
+                    std::string s = pk.toString(16) + " " + x.toString(16);
+                    util::appendToFile(_config.resultsFile, s);
+                }
+                key = key.add((uint64_t)_config.blocks * _config.threads);
+            }
         } else {
-            f.setTargets(_config.targets);
+            KeyFinder f(_config.nextKey, _config.endKey, _config.compression, d, _config.stride);
+
+            f.setResultCallback(resultCallback);
+            f.setStatusInterval(_config.statusInterval);
+            f.setStatusCallback(statusCallback);
+
+            f.init();
+
+            if(!_config.targetsFile.empty()) {
+                f.setTargets(_config.targetsFile);
+            } else {
+                f.setTargets(_config.targets);
+            }
+
+            f.run();
         }
-
-        f.run();
-
         delete d;
     } catch(KeySearchException ex) {
         Logger::log(LogLevel::Info, "Error: " + ex.msg);
@@ -425,6 +453,7 @@ int run()
 
     return 0;
 }
+
 
 /**
  * Parses a string in the form of x/y
@@ -468,6 +497,7 @@ int main(int argc, char **argv)
     bool optThreads = false;
     bool optBlocks = false;
     bool optPoints = false;
+    bool keyspaceOpt = false;
 
     uint32_t shareIdx = 0;
     uint32_t numShares = 0;
@@ -511,6 +541,8 @@ int main(int argc, char **argv)
     parser.add("", "--compression", true);
 	parser.add("-i", "--in", true);
 	parser.add("-o", "--out", true);
+    parser.add("--random", true);
+	parser.add("-x", false);
     parser.add("-f", "--follow", false);
     parser.add("", "--list-devices", false);
     parser.add("", "--keyspace", true);
@@ -558,6 +590,7 @@ int main(int argc, char **argv)
             } else if(optArg.equals("", "--continue")) {
                 _config.checkpointFile = optArg.arg;
             } else if(optArg.equals("", "--keyspace")) {
+                keyspaceOpt = true;
                 secp256k1::uint256 start;
                 secp256k1::uint256 end;
 
@@ -602,6 +635,10 @@ int main(int argc, char **argv)
                 }
             } else if(optArg.equals("-f", "--follow")) {
                 _config.follow = true;
+            } else if(optArg.equals("-x")) {
+				_config.exportX = true;
+			} else if(optArg.equals("--random")) {
+                _config.randomCount = util::parseUInt64(optArg.arg);
             }
 
 		} catch(std::string err) {
@@ -676,5 +713,5 @@ int main(int argc, char **argv)
         readCheckpointFile();
     }
 
-    return run();
+    return run(keyspaceOpt);
 }

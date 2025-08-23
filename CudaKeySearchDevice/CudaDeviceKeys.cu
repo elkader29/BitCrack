@@ -286,6 +286,21 @@ cudaError_t CudaDeviceKeys::doStep()
 	return err;
 }
 
+unsigned int *CudaDeviceKeys::getDevPrivate()
+{
+	return _devPrivate;
+}
+
+unsigned int *CudaDeviceKeys::getDevBasePointX()
+{
+	return _devBasePointX;
+}
+
+unsigned int *CudaDeviceKeys::getDevBasePointY()
+{
+	return _devBasePointY;
+}
+
 __global__ void multiplyStepKernel(const unsigned int *privateKeys, int pointsPerThread, int step, unsigned int *chain, const unsigned int *gxPtr, const unsigned int *gyPtr)
 {
 	unsigned int *xPtr = ec::getXPtr();
