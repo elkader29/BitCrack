@@ -335,7 +335,7 @@ void CudaKeySearchDevice::initExport(const secp256k1::uint256 &start, const secp
         cudaCall(cudaMalloc(&_devSeed, sizeof(unsigned int) * 4));
         cudaCall(cudaMemcpy(_devSeed, seed, sizeof(unsigned int) * 4, cudaMemcpyHostToDevice));
 
-        cudaCall(_resultList.init(sizeof(CudaExportResult), randomCount));
+        cudaCall(_resultList.init(sizeof(CudaExportResult), (uint64_t)_blocks * _threads));
     } else {
         _exportMode = 0; // SEQUENTIAL
         cudaCall(_resultList.init(sizeof(CudaExportResult), _blocks * _threads));
@@ -369,7 +369,9 @@ void CudaKeySearchDevice::doExportStep()
 
     cudaCall(cudaFree(devStartKey));
 
-    _startExponent = _startExponent.add((uint64_t)_blocks * _threads);
+    if(_exportMode == 0) {
+        _startExponent = _startExponent.add((uint64_t)_blocks * _threads);
+    }
 }
 
 size_t CudaKeySearchDevice::getExportResults(std::vector<CudaExportResult> &results)
