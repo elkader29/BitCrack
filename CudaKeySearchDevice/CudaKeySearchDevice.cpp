@@ -3,6 +3,7 @@
 #include "util.h"
 #include "cudabridge.h"
 #include "AddressUtil.h"
+#include "CryptoUtil.h"
 
 void CudaKeySearchDevice::cudaCall(cudaError_t err)
 {
@@ -393,17 +394,4 @@ secp256k1::uint256 CudaKeySearchDevice::getNextKey()
     uint64_t totalPoints = (uint64_t)_pointsPerThread * _threads * _blocks;
 
     return _startExponent + secp256k1::uint256(totalPoints) * _iterations * _stride;
-}
-
-void CudaKeySearchDevice::initExport(const secp256k1::uint256 &start, const secp256k1::uint256 &end, uint64_t randomCount, bool randomRange)
-{
-}
-
-void CudaKeySearchDevice::doExportStep()
-{
-}
-
-size_t CudaKeySearchDevice::getExportResults(std::vector<CudaExportResult> &results)
-{
-    return 0;
 }
