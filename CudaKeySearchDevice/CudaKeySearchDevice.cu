@@ -324,17 +324,12 @@ __device__ void setResultExport(unsigned int *privateKey, unsigned int *x)
 }
 
 
-enum ExportMode {
-    SEQUENTIAL,
-    RANDOM_FULL,
-    RANDOM_RANGE
-};
-
-__global__ void exportKernel(ExportMode mode, unsigned int *startKey, unsigned int *endKey, unsigned int *seed, const unsigned int *basePointsX, const unsigned int *basePointsY)
+__global__ void exportKernel(int mode, unsigned int *startKey, unsigned int *endKey, unsigned int *seed, const unsigned int *basePointsX, const unsigned int *basePointsY)
 {
     int threadId = blockIdx.x * blockDim.x + threadIdx.x;
 
-    if(mode == SEQUENTIAL) {
+    // mode 0: SEQUENTIAL
+    if(mode == 0) {
         unsigned int privateKey[8];
 
         add_cc(privateKey[7], startKey[7], threadId);
@@ -359,11 +354,13 @@ __global__ void exportKernel(ExportMode mode, unsigned int *startKey, unsigned i
 
         unsigned int privateKey[8];
 
-        if(mode == RANDOM_FULL) {
+        // mode 1: RANDOM_FULL
+        if(mode == 1) {
             for(int j = 0; j < 8; j++) {
                 privateKey[j] = xor_rand(&s);
             }
-        } else { // RANDOM_RANGE
+        // mode 2: RANDOM_RANGE
+        } else {
             unsigned int range[8];
             sub(endKey, startKey, range);
 
