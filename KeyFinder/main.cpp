@@ -671,21 +671,23 @@ int main(int argc, char **argv)
 	// Parse operands
 	std::vector<std::string> ops = parser.getOperands();
 
-    // If there are no operands, then we must be reading from a file, otherwise
-    // expect addresses on the commandline
-	if(ops.size() == 0) {
-		if(_config.targetsFile.length() == 0) {
-			Logger::log(LogLevel::Error, "Missing arguments");
-			usage();
-			return 1;
-		}
-	} else {
-		for(unsigned int i = 0; i < ops.size(); i++) {
-            if(!Address::verifyAddress(ops[i])) {
-                Logger::log(LogLevel::Error, "Invalid address '" + ops[i] + "'");
-                return 1;
-            }
-			_config.targets.push_back(ops[i]);
+	if(!_config.exportX) {
+		// If there are no operands, then we must be reading from a file, otherwise
+		// expect addresses on the commandline
+		if(ops.size() == 0) {
+			if(_config.targetsFile.length() == 0) {
+				Logger::log(LogLevel::Error, "Missing arguments");
+				usage();
+				return 1;
+			}
+		} else {
+			for(unsigned int i = 0; i < ops.size(); i++) {
+				if(!Address::verifyAddress(ops[i])) {
+					Logger::log(LogLevel::Error, "Invalid address '" + ops[i] + "'");
+					return 1;
+				}
+				_config.targets.push_back(ops[i]);
+			}
 		}
 	}
     
