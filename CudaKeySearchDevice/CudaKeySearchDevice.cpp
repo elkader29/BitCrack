@@ -311,6 +311,7 @@ size_t CudaKeySearchDevice::getResults(std::vector<KeySearchResult> &resultsOut)
 void CudaKeySearchDevice::initExport(const secp256k1::uint256 &start, const secp256k1::uint256 &end, uint64_t randomCount, bool randomRange)
 {
     _startExponent = start;
+    _endExponent = end;
 
     cudaCall(cudaSetDevice(_device));
     cudaCall(cudaSetDeviceFlags(cudaDeviceScheduleBlockingSync));
@@ -319,7 +320,26 @@ void CudaKeySearchDevice::initExport(const secp256k1::uint256 &start, const secp
     // This will initialize the base points
     generateStartingPoints();
 
-    cudaCall(_resultList.init(sizeof(CudaExportResult), _blocks * _threads));
+    if(randomCount > 0) {
+        if(randomRange) {
+            _exportMode = 2; // RANDOM_RANGE
+        } else {
+            _exportMode = 1; // RANDOM_FULL
+        }
+
+        // Generate seed
+        crypto::Rng rng;
+        unsigned int seed[4];
+        rng.get((unsigned char *)seed, 16);
+
+        cudaCall(cudaMalloc(&_devSeed, sizeof(unsigned int) * 4));
+        cudaCall(cudaMemcpy(_devSeed, seed, sizeof(unsigned int) * 4, cudaMemcpyHostToDevice));
+
+        cudaCall(_resultList.init(sizeof(CudaExportResult), randomCount));
+    } else {
+        _exportMode = 0; // SEQUENTIAL
+        cudaCall(_resultList.init(sizeof(CudaExportResult), _blocks * _threads));
+    }
 }
 
 void CudaKeySearchDevice::doExportStep()
@@ -331,7 +351,21 @@ void CudaKeySearchDevice::doExportStep()
     cudaCall(cudaMalloc(&devStartKey, sizeof(unsigned int) * 8));
     cudaCall(cudaMemcpy(devStartKey, startKey, sizeof(unsigned int) * 8, cudaMemcpyHostToDevice));
 
-    callExportKernel(_blocks, _threads, devStartKey, _deviceKeys.getDevBasePointX(), _deviceKeys.getDevBasePointY());
+    // In random mode, endKey is also needed
+    unsigned int *devEndKey = NULL;
+
+    if(_exportMode == 2) {
+        unsigned int endKey[8];
+        _endExponent.exportWords(endKey, 8, secp256k1::uint256::BigEndian);
+        cudaCall(cudaMalloc(&devEndKey, sizeof(unsigned int) * 8));
+        cudaCall(cudaMemcpy(devEndKey, endKey, sizeof(unsigned int) * 8, cudaMemcpyHostToDevice));
+    }
+
+    callExportKernel(_blocks, _threads, _exportMode, devStartKey, devEndKey, _devSeed, _deviceKeys.getDevBasePointX(), _deviceKeys.getDevBasePointY());
+
+    if(devEndKey != NULL) {
+        cudaCall(cudaFree(devEndKey));
+    }
 
     cudaCall(cudaFree(devStartKey));
 

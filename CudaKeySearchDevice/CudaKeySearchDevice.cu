@@ -14,6 +14,7 @@
 #include "CudaHashLookup.cuh"
 #include "CudaAtomicList.cuh"
 #include "CudaDeviceKeys.cuh"
+#include "xor.cuh"
 
 __constant__ unsigned int _INC_X[8];
 
@@ -323,23 +324,62 @@ __device__ void setResultExport(unsigned int *privateKey, unsigned int *x)
 }
 
 
-__global__ void exportKernel(unsigned int *startKey, const unsigned int *basePointsX, const unsigned int *basePointsY)
+enum ExportMode {
+    SEQUENTIAL,
+    RANDOM_FULL,
+    RANDOM_RANGE
+};
+
+__global__ void exportKernel(ExportMode mode, unsigned int *startKey, unsigned int *endKey, unsigned int *seed, const unsigned int *basePointsX, const unsigned int *basePointsY)
 {
     int threadId = blockIdx.x * blockDim.x + threadIdx.x;
 
-    unsigned int privateKey[8];
+    if(mode == SEQUENTIAL) {
+        unsigned int privateKey[8];
 
-    add_cc(privateKey[7], startKey[7], threadId);
-    addc_cc(privateKey[6], startKey[6], 0);
-    addc_cc(privateKey[5], startKey[5], 0);
-    addc_cc(privateKey[4], startKey[4], 0);
-    addc_cc(privateKey[3], startKey[3], 0);
-    addc_cc(privateKey[2], startKey[2], 0);
-    addc_cc(privateKey[1], startKey[1], 0);
-    addc(privateKey[0], startKey[0], 0);
+        add_cc(privateKey[7], startKey[7], threadId);
+        addc_cc(privateKey[6], startKey[6], 0);
+        addc_cc(privateKey[5], startKey[5], 0);
+        addc_cc(privateKey[4], startKey[4], 0);
+        addc_cc(privateKey[3], startKey[3], 0);
+        addc_cc(privateKey[2], startKey[2], 0);
+        addc_cc(privateKey[1], startKey[1], 0);
+        addc(privateKey[0], startKey[0], 0);
 
-    unsigned int x[8], y[8];
-    privateKeyToPublicKey(privateKey, x, y, basePointsX, basePointsY);
+        unsigned int x[8], y[8];
+        privateKeyToPublicKey(privateKey, x, y, basePointsX, basePointsY);
 
-    setResultExport(privateKey, x);
+        setResultExport(privateKey, x);
+    } else {
+        struct xor_state s;
+        s.x = seed[0] + threadId;
+        s.y = seed[1];
+        s.z = seed[2];
+        s.w = seed[3];
+
+        unsigned int privateKey[8];
+
+        if(mode == RANDOM_FULL) {
+            for(int j = 0; j < 8; j++) {
+                privateKey[j] = xor_rand(&s);
+            }
+        } else { // RANDOM_RANGE
+            unsigned int range[8];
+            sub(endKey, startKey, range);
+
+            unsigned int random[8];
+            do {
+                for(int j = 0; j < 8; j++) {
+                    random[j] = xor_rand(&s);
+                }
+            } while(cmp(random, range) > 0);
+
+            add(startKey, random, privateKey);
+        }
+
+        unsigned int x[8], y[8];
+        privateKeyToPublicKey(privateKey, x, y, basePointsX, basePointsY);
+
+        setResultExport(privateKey, x);
+    }
 }

@@ -78,6 +78,17 @@ __device__ static bool equal(const unsigned int *a, const unsigned int *b)
 	return eq;
 }
 
+__device__ static int cmp(const unsigned int *a, const unsigned int *b)
+{
+    for(int i = 0; i < 8; i++) {
+        if(a[i] < b[i])
+            return -1;
+        if(a[i] > b[i])
+            return 1;
+    }
+    return 0;
+}
+
 /**
  * Reads an 8-word big integer from device memory
  */

@@ -412,21 +412,31 @@ int run(bool keyspaceOpt)
                 return 1;
             }
             CudaKeySearchDevice *cudaDevice = (CudaKeySearchDevice *)d;
-            cudaDevice->initExport(_config.nextKey, _config.endKey, _config.randomCount, keyspaceOpt);
 
-            secp256k1::uint256 key = _config.nextKey;
-            while(key.cmp(_config.endKey) <= 0) {
+            bool randomRange = keyspaceOpt && (_config.randomCount > 0);
+            cudaDevice->initExport(_config.nextKey, _config.endKey, _config.randomCount, randomRange);
+
+            uint64_t numKeysToGenerate = 0;
+            if(_config.randomCount > 0) {
+                numKeysToGenerate = _config.randomCount;
+            } else {
+                numKeysToGenerate = (_config.endKey - _config.nextKey).toUint64() + 1;
+            }
+
+            uint64_t keysPerStep = (uint64_t)_config.blocks * _config.threads;
+            uint64_t steps = (numKeysToGenerate + keysPerStep - 1) / keysPerStep;
+
+            for(uint64_t i = 0; i < steps; i++) {
                 cudaDevice->doExportStep();
                 std::vector<CudaExportResult> results;
                 size_t count = cudaDevice->getExportResults(results);
 
-                for(size_t i = 0; i < count; i++) {
-                    secp256k1::uint256 pk(results[i].privateKey, secp256k1::uint256::BigEndian);
-                    secp256k1::uint256 x(results[i].x, secp256k1::uint256::BigEndian);
+                for(size_t j = 0; j < count; j++) {
+                    secp256k1::uint256 pk(results[j].privateKey, secp256k1::uint256::BigEndian);
+                    secp256k1::uint256 x(results[j].x, secp256k1::uint256::BigEndian);
                     std::string s = pk.toString(16) + " " + x.toString(16);
                     util::appendToFile(_config.resultsFile, s);
                 }
-                key = key.add((uint64_t)_config.blocks * _config.threads);
             }
         } else {
             KeyFinder f(_config.nextKey, _config.endKey, _config.compression, d, _config.stride);
