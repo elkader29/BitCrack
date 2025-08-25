@@ -125,6 +125,35 @@ void CudaKeySearchDevice::generateStartingPoints()
         }
     }
 
+}
+
+void CudaKeySearchDevice::generateExportBasePoints()
+{
+    uint64_t totalPoints = 256;
+
+    std::vector<secp256k1::uint256> exponents;
+
+    Logger::log(LogLevel::Info, "Generating 256 base points for multiplication");
+
+    secp256k1::uint256 privKey(1);
+
+    for(int i = 0; i < 256; i++) {
+        exponents.push_back(privKey);
+        privKey = privKey.mul(2);
+    }
+
+    // Temporarily set grid size for base point generation
+    int tempBlocks = 1;
+    int tempThreads = 256;
+    int tempPoints = 1;
+
+    cudaCall(_deviceKeys.init(tempBlocks, tempThreads, tempPoints, exponents));
+
+    // Generate the points
+    for(int i = 1; i <= 256; i++) {
+        cudaCall(_deviceKeys.doStep());
+    }
+
     Logger::log(LogLevel::Info, "Done");
 
     _deviceKeys.clearPrivateKeys();
@@ -319,7 +348,7 @@ void CudaKeySearchDevice::initExport(const secp256k1::uint256 &start, const secp
     cudaCall(cudaDeviceSetCacheConfig(cudaFuncCachePreferL1));
 
     // This will initialize the base points
-    generateStartingPoints();
+    generateExportBasePoints();
 
     if(randomCount > 0) {
         if(randomRange) {
@@ -362,7 +391,11 @@ void CudaKeySearchDevice::doExportStep()
         cudaCall(cudaMemcpy(devEndKey, endKey, sizeof(unsigned int) * 8, cudaMemcpyHostToDevice));
     }
 
-    callExportKernel(_blocks, _threads, _exportMode, devStartKey, devEndKey, _devSeed, _deviceKeys.getDevBasePointX(), _deviceKeys.getDevBasePointY());
+    try {
+        callExportKernel(_blocks, _threads, _exportMode, devStartKey, devEndKey, _devSeed, _deviceKeys.getDevBasePointX(), _deviceKeys.getDevBasePointY());
+    } catch(cuda::CudaException ex) {
+        throw KeySearchException(ex.msg);
+    }
 
     if(devEndKey != NULL) {
         cudaCall(cudaFree(devEndKey));

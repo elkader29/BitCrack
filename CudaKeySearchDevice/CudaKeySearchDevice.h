@@ -52,6 +52,8 @@ private:
 
     void generateStartingPoints();
 
+    void generateExportBasePoints();
+
     CudaDeviceKeys _deviceKeys;
 
     CudaAtomicList _resultList;
